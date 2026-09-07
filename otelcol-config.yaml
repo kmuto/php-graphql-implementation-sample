@@ -20,6 +20,9 @@ processors:
   # そのため get-users-10pct (10%) に該当するトレースも default-50pct (50%) で通る可能性がある。
   # 厳密にレートを分離するには composite ポリシーで排他制御するか、
   # default 側に「特定オペレーション以外」の条件を追加する必要がある。
+  #
+  # ヘルスチェック等の除外は OTEL_PHP_EXCLUDED_URLS (docker-compose.yml) で
+  # PHP 側からスパン自体を生成しないようにしている。Collector 側での除外は不要。
   tail_sampling:
     decision_wait: 5s
     num_traces: 1000

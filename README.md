@@ -301,6 +301,7 @@ PHP の opentelemetry 拡張と自動計装パッケージにより、コード�
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | OTLP プロトコル |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otelcol:4318` | Collector エンドポイント |
 | `OTEL_PROPAGATORS` | `baggage,tracecontext` | コンテキスト伝搬方式 |
+| `OTEL_PHP_EXCLUDED_URLS` | `healthcheck` | トレース除外 URL (部分一致、カンマ区切り) |
 
 ### otelcol-mackerel 設定
 
@@ -372,6 +373,60 @@ PHP-FPM はリクエストごとにプロセスの状態がリセットされる
 **`AppServiceProvider` でイベントリスナーを手動登録しない理由:**
 Laravel 13 は `app/Listeners/` 配下のクラスを自動的にスキャンし、メソッドの型ヒントからイベントとリスナーを対応付ける (イベントオートディスカバリ)。`AppServiceProvider::boot()` で `Event::listen()` を併用すると同じリスナーが二重登録され、スパンが 2 回作成される不具合を引き起こす。リスナーを `app/Listeners/` に配置する場合、手動登録は行わないこと。
 
+### エラースパンの発生パターン
+
+以下のリクエストで意図的に GraphQL エラースパン (`Status code: Error`) を発生させることができる。
+テールベースサンプリングの `errors-always` ポリシーや、Mackerel 上でのエラー検知の動作確認に利用できる。
+
+#### 存在しない ID の削除
+
+non-nullable フィールドに null が返りエラーになる。最も手軽なパターン。
+
+```bash
+curl -s -X POST http://localhost:8080/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"mutation DeleteNonExistent { deleteUser(id: 99999) { id name } }"}' \
+  | python3 -m json.tool
+```
+
+#### バリデーション違反
+
+スキーマの `@rules(apply: ["email"])` により不正な形式が拒否される。
+
+```bash
+curl -s -X POST http://localhost:8080/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"query InvalidEmail { user(email: \"not-an-email\") { id name } }"}' \
+  | python3 -m json.tool
+```
+
+#### 存在しないフィールドの参照
+
+スキーマに定義されていないフィールドを要求するとパースエラーになる。
+
+```bash
+curl -s -X POST http://localhost:8080/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"query BadField { user(id: 1) { id nonexistent } }"}' \
+  | python3 -m json.tool
+```
+
+#### 一意制約違反
+
+既にシーディングされている `test@example.com` で再作成すると DB の UNIQUE 制約エラーになる。
+
+```bash
+curl -s -X POST http://localhost:8080/graphql \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"mutation DuplicateEmail { createUser(input: { name: \"Dup\", email: \"test@example.com\", password: \"pass123\" }) { id } }"}' \
+  | python3 -m json.tool
+```
+
+いずれの場合も `GraphQLTelemetry` リスナーがエラーを検知し、スパンに以下を記録する:
+
+- `Status code: Error`
+- `graphql.error` イベント (`graphql.error.message`, `graphql.error.path`)
+
 ## テールベースサンプリング
 
 ### サンプリングの概要
@@ -386,6 +441,8 @@ OpenTelemetry Collector (`otelcol-config.yaml`) でテールベースサンプ�
 | `mutations-always` | `graphql.operation.type` = `mutation` | 100% | データ変更操作は全件保持 |
 | `get-users-10pct` | `graphql.operation.name` = `GetUsers` | 10% | 高頻度クエリはサンプリングでコスト削減 |
 | `default-50pct` | (条件なし) | 50% | 上記に該当しないトレースのデフォルト |
+
+ヘルスチェック (`/healthcheck`) は `OTEL_PHP_EXCLUDED_URLS` で PHP 側からスパン自体を生成しないため、Collector には到達しない。除外対象を増やす場合は `docker-compose.yml` の `OTEL_PHP_EXCLUDED_URLS` にカンマ区切りでパスを追加する (部分一致)。
 
 ### ポリシー評価の注意点
 
