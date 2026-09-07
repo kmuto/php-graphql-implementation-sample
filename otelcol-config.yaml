@@ -14,11 +14,55 @@ exporters:
 processors:
   resource_detection:
 
+  # テールベースサンプリング: トレース全体を受け取ってから属性に基づいて判断する
+  # decision_wait: スパンが揃うまで待つ時間 (PHP は同期的なのでリクエスト完了後すぐ届く)
+  # 注意: ポリシーは OR 評価。いずれか1つでも Sampled と判定すればトレースは残る。
+  # そのため get-users-10pct (10%) に該当するトレースも default-50pct (50%) で通る可能性がある。
+  # 厳密にレートを分離するには composite ポリシーで排他制御するか、
+  # default 側に「特定オペレーション以外」の条件を追加する必要がある。
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 1000
+    policies:
+      # エラーのあるトレースは必ず残す
+      - name: errors-always
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+
+      # mutation は必ず残す (データ変更は全件記録)
+      - name: mutations-always
+        type: string_attribute
+        string_attribute:
+          key: graphql.operation.type
+          values: [mutation]
+
+      # query GetUsers は 10% だけサンプリング (高頻度クエリの例)
+      - name: get-users-10pct
+        type: and
+        and:
+          and_sub_policy:
+            - name: match-op
+              type: string_attribute
+              string_attribute:
+                key: graphql.operation.name
+                values: [GetUsers]
+            - name: sample-10pct
+              type: probabilistic
+              probabilistic:
+                sampling_percentage: 10
+
+      # その他のトレースは 50% サンプリング
+      - name: default-50pct
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 50
+
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [resource_detection]
+      processors: [resource_detection, tail_sampling]
       exporters: [mackerel_otlp, debug]
     metrics:
       receivers: [otlp]

@@ -308,6 +308,119 @@ Collector の設定ファイルは `otelcol-config.yaml`。
 docker compose logs -f otelcol
 ```
 
+## GraphQL カスタム計装
+
+### 背景と課題
+
+PHP の OpenTelemetry ゼロコード計装 (`opentelemetry-auto-laravel`) は HTTP リクエスト単位でスパンを生成するが、GraphQL は単一エンドポイント (`POST /graphql`) で全操作を処理するため、スパン名がすべて `POST /graphql` となり、どのオペレーションが実行されたか判別できない。
+
+この課題を解決するため、Lighthouse のイベントシステムを利用して GraphQL 固有の子スパンを生成し、セマンティック属性を付与している。
+
+### 仕組み
+
+`app/Listeners/GraphQLTelemetry.php` が Lighthouse の実行イベントをリッスンし、GraphQL オペレーションごとにスパンを生成する。
+
+```
+HTTP リクエスト (自動計装)
+└── POST /graphql                          ← opentelemetry-auto-laravel が生成
+    └── graphql query GetUsers             ← GraphQLTelemetry が生成 (子スパン)
+        ├── graphql.operation.type: query
+        ├── graphql.operation.name: GetUsers
+        └── graphql.document: query GetUsers { ... }
+```
+
+Laravel のイベントオートディスカバリにより `app/Listeners/` 配下のリスナーは自動登録される。手動でのイベント登録は不要。
+
+### イベントフロー
+
+| Lighthouse イベント | タイミング | GraphQLTelemetry の処理 |
+| --- | --- | --- |
+| `StartExecution` | GraphQL クエリ実行開始時 | AST を解析し、子スパンを作成。オペレーション属性を付与 |
+| `EndExecution` | GraphQL クエリ実行完了時 | エラーがあればスパンにエラーステータスとイベントを記録し、スパンを終了 |
+
+### スパン属性
+
+| 属性 | 型 | 説明 | 例 |
+| --- | --- | --- | --- |
+| `graphql.operation.type` | string | オペレーション種別 | `query`, `mutation` |
+| `graphql.operation.name` | string | オペレーション名 (クライアントが指定した場合) | `GetUsers`, `CreateProduct` |
+| `graphql.document` | string | GraphQL クエリ文字列 (2048 文字以下の場合) | `query GetUsers { users { ... } }` |
+
+スパン名は `graphql {type} {name}` の形式で生成される (例: `graphql query GetUsers`, `graphql mutation`)。
+
+### エラー記録
+
+GraphQL レスポンスにエラーが含まれる場合、スパンに以下が記録される:
+
+- スパンステータスが `ERROR` に設定される
+- エラーごとに `graphql.error` イベントが追加される
+  - `graphql.error.message` — エラーメッセージ
+  - `graphql.error.path` — エラーが発生したフィールドパス (例: `users.0.email`)
+
+### 設計上の判断
+
+**親スパンの変更ではなく子スパンを作成する理由:**
+Laravel の自動計装はコントローラ処理の完了後にルートスパン名を `POST /graphql` で上書きする。そのため、`StartExecution` 時に親スパンの名前や属性を変更しても最終的に失われる。独立した子スパンを作成することで、GraphQL 属性が確実に保持される。
+
+**`static` プロパティでスパンを管理する理由:**
+PHP-FPM はリクエストごとにプロセスの状態がリセットされるため、`StartExecution` で作成したスパンを `EndExecution` で参照するのに `static` プロパティを安全に使用できる。リクエスト間でスパンが漏洩することはない。
+
+## テールベースサンプリング
+
+### サンプリングの概要
+
+OpenTelemetry Collector (`otelcol-config.yaml`) でテールベースサンプリングを実施する。ヘッドベースサンプリング (アプリ側で送信前に判断) と異なり、トレース全体のスパンが揃った後に属性に基づいて取捨選択を行う。これにより `graphql.operation.name` などの属性を使ったサンプリングルールが可能になる。
+
+### サンプリングポリシー
+
+| ポリシー名 | 条件 | サンプリング率 | 用途 |
+| --- | --- | --- | --- |
+| `errors-always` | スパンステータスが `ERROR` | 100% | 障害調査のためエラーは全件保持 |
+| `mutations-always` | `graphql.operation.type` = `mutation` | 100% | データ変更操作は全件保持 |
+| `get-users-10pct` | `graphql.operation.name` = `GetUsers` | 10% | 高頻度クエリはサンプリングでコスト削減 |
+| `default-50pct` | (条件なし) | 50% | 上記に該当しないトレースのデフォルト |
+
+### ポリシー評価の注意点
+
+ポリシーは **OR 評価**される。いずれか 1 つのポリシーが「保持」と判定すればトレースは残る。
+
+```
+トレース → errors-always?  → YES → 保持
+              ↓ NO
+           mutations-always? → YES → 保持
+              ↓ NO
+           get-users-10pct?  → YES (10%の確率) → 保持
+              ↓ NO
+           default-50pct?    → YES (50%の確率) → 保持
+              ↓ NO
+           → 破棄
+```
+
+この仕組みにより、`get-users-10pct` で 10% サンプリングとしても、同じトレースが `default-50pct` (50%) に該当して保持される可能性がある。`GetUsers` の実効サンプリング率は 10% + (90% × 50%) = **55%** となる。
+
+厳密にレートを分離するには、`composite` ポリシータイプで排他的な評価順序を定義するか、`default-50pct` 側に特定オペレーションを除外する条件を追加する必要がある。
+
+### カスタマイズ例
+
+特定のオペレーションのサンプリング率を変更:
+
+```yaml
+# query GetProduct を 5% サンプリングに追加
+- name: get-product-5pct
+  type: and
+  and:
+    and_sub_policy:
+      - name: match-op
+        type: string_attribute
+        string_attribute:
+          key: graphql.operation.name
+          values: [GetProduct]
+      - name: sample-5pct
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 5
+```
+
 ## ディレクトリ構成 (主要ファイル)
 
 ```
