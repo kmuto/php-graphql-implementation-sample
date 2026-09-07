@@ -122,6 +122,10 @@ Content-Type: application/json
 
 以下のすべての例は `| python3 -m json.tool` でレスポンスを整形している。不要なら省略可。
 
+すべてのクエリに名前付きオペレーション (`query GetUsers { ... }`, `mutation CreateUser { ... }`) を使用している。
+これにより `graphql.operation.name` スパン属性が記録され、テールベースサンプリングのポリシーで利用できる。
+無名オペレーション (`{ users { ... } }`) ではオペレーション名が記録されない。
+
 ### ユーザー
 
 #### ユーザー一覧を取得
@@ -129,7 +133,7 @@ Content-Type: application/json
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ users(first: 5) { data { id name email } paginatorInfo { total currentPage lastPage } } }"}' \
+  -d '{"query":"query GetUsers { users(first: 5) { data { id name email } paginatorInfo { total currentPage lastPage } } }"}' \
   | python3 -m json.tool
 ```
 
@@ -138,7 +142,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ user(id: 1) { id name email email_verified_at created_at } }"}' \
+  -d '{"query":"query GetUser { user(id: 1) { id name email email_verified_at created_at } }"}' \
   | python3 -m json.tool
 ```
 
@@ -147,7 +151,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ user(email: \"test@example.com\") { id name email } }"}' \
+  -d '{"query":"query GetUserByEmail { user(email: \"test@example.com\") { id name email } }"}' \
   | python3 -m json.tool
 ```
 
@@ -156,7 +160,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ users(name: \"%Test%\", first: 10) { data { id name email } } }"}' \
+  -d '{"query":"query SearchUsers { users(name: \"%Test%\", first: 10) { data { id name email } } }"}' \
   | python3 -m json.tool
 ```
 
@@ -165,7 +169,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"mutation { createUser(input: { name: \"Taro Yamada\", email: \"taro@example.com\", password: \"secret123\" }) { id name email created_at } }"}' \
+  -d '{"query":"mutation CreateUser { createUser(input: { name: \"Taro Yamada\", email: \"taro@example.com\", password: \"secret123\" }) { id name email created_at } }"}' \
   | python3 -m json.tool
 ```
 
@@ -174,7 +178,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"mutation { updateUser(id: 1, input: { name: \"Updated Name\" }) { id name email updated_at } }"}' \
+  -d '{"query":"mutation UpdateUser { updateUser(id: 1, input: { name: \"Updated Name\" }) { id name email updated_at } }"}' \
   | python3 -m json.tool
 ```
 
@@ -183,7 +187,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"mutation { deleteUser(id: 1) { id name } }"}' \
+  -d '{"query":"mutation DeleteUser { deleteUser(id: 1) { id name } }"}' \
   | python3 -m json.tool
 ```
 
@@ -194,7 +198,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ products(first: 5) { data { id name description price stock sku is_active } paginatorInfo { total currentPage lastPage } } }"}' \
+  -d '{"query":"query GetProducts { products(first: 5) { data { id name description price stock sku is_active } paginatorInfo { total currentPage lastPage } } }"}' \
   | python3 -m json.tool
 ```
 
@@ -203,7 +207,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ products(first: 5, page: 2) { data { id name price } paginatorInfo { currentPage lastPage } } }"}' \
+  -d '{"query":"query GetProductsPage2 { products(first: 5, page: 2) { data { id name price } paginatorInfo { currentPage lastPage } } }"}' \
   | python3 -m json.tool
 ```
 
@@ -212,7 +216,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ product(id: 1) { id name description price stock sku is_active created_at } }"}' \
+  -d '{"query":"query GetProduct { product(id: 1) { id name description price stock sku is_active created_at } }"}' \
   | python3 -m json.tool
 ```
 
@@ -221,7 +225,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ products(is_active: true, first: 10) { data { id name price stock } } }"}' \
+  -d '{"query":"query GetActiveProducts { products(is_active: true, first: 10) { data { id name price stock } } }"}' \
   | python3 -m json.tool
 ```
 
@@ -230,7 +234,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ products(name: \"%est%\", first: 10) { data { id name price } } }"}' \
+  -d '{"query":"query SearchProducts { products(name: \"%est%\", first: 10) { data { id name price } } }"}' \
   | python3 -m json.tool
 ```
 
@@ -239,7 +243,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"mutation { createProduct(input: { name: \"Laravel Tシャツ\", description: \"公式ロゴ入りTシャツ\", price: 3500, stock: 100, sku: \"SKU-LARAVEL-001\" }) { id name description price stock sku is_active created_at } }"}' \
+  -d '{"query":"mutation CreateProduct { createProduct(input: { name: \"Laravel Tシャツ\", description: \"公式ロゴ入りTシャツ\", price: 3500, stock: 100, sku: \"SKU-LARAVEL-001\" }) { id name description price stock sku is_active created_at } }"}' \
   | python3 -m json.tool
 ```
 
@@ -248,7 +252,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"mutation { updateProduct(id: 1, input: { price: 2980, stock: 50 }) { id name price stock updated_at } }"}' \
+  -d '{"query":"mutation UpdateProduct { updateProduct(id: 1, input: { price: 2980, stock: 50 }) { id name price stock updated_at } }"}' \
   | python3 -m json.tool
 ```
 
@@ -257,7 +261,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"mutation { updateProduct(id: 1, input: { is_active: false }) { id name is_active } }"}' \
+  -d '{"query":"mutation DeactivateProduct { updateProduct(id: 1, input: { is_active: false }) { id name is_active } }"}' \
   | python3 -m json.tool
 ```
 
@@ -266,7 +270,7 @@ curl -s -X POST http://localhost:8080/graphql \
 ```bash
 curl -s -X POST http://localhost:8080/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"mutation { deleteProduct(id: 1) { id name } }"}' \
+  -d '{"query":"mutation DeleteProduct { deleteProduct(id: 1) { id name } }"}' \
   | python3 -m json.tool
 ```
 
