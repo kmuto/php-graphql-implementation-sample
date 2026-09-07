@@ -1,0 +1,30 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: ${env:OTELCOL_MACKEREL_HOST}:4317
+      http:
+        endpoint: ${env:OTELCOL_MACKEREL_HOST}:4318
+
+exporters:
+  mackerel_otlp:
+  debug:
+    verbosity: basic
+
+processors:
+  resource_detection:
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resource_detection]
+      exporters: [mackerel_otlp, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [resource_detection]
+      exporters: [mackerel_otlp, debug]
+    logs:
+      receivers: [otlp]
+      processors: [resource_detection]
+      exporters: [mackerel_otlp, debug]

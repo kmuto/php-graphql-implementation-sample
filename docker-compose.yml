@@ -13,6 +13,29 @@ services:
       - APP_DEBUG=true
       - DB_CONNECTION=sqlite
       - DB_DATABASE=/var/www/data/database.sqlite
+      - OTEL_PHP_AUTOLOAD_ENABLED=true
+      - OTEL_SERVICE_NAME=sg
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4318
+      - OTEL_PROPAGATORS=baggage,tracecontext
+    depends_on:
+      - otelcol
+
+  otelcol:
+    image: ghcr.io/mackerelio/opentelemetry-collector-mackerel/otelcol-mackerel:latest
+    container_name: otelcol
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol/config.yaml:ro
+    environment:
+      - MACKEREL_APIKEY=${MACKEREL_APIKEY}
+      - OTELCOL_MACKEREL_HOST=otelcol
+    ports:
+      - "4317:4317"
+      - "4318:4318"
 
 volumes:
   sqlite-data:

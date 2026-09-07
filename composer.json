@@ -9,7 +9,12 @@
         "php": "^8.3",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
-        "nuwave/lighthouse": "^6.70"
+        "nuwave/lighthouse": "^6.70",
+        "open-telemetry/exporter-otlp": "*",
+        "open-telemetry/opentelemetry-auto-http-async": "*",
+        "open-telemetry/opentelemetry-auto-laravel": "*",
+        "open-telemetry/opentelemetry-auto-pdo": "*",
+        "open-telemetry/sdk": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

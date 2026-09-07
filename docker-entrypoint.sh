@@ -11,6 +11,7 @@ chown -R www-data:www-data /var/www/data
 chmod -R 777 /var/www/storage /var/www/bootstrap/cache 2>/dev/null || true
 
 cd /var/www
+composer dump-autoload -o 2>/dev/null || true
 php artisan cache:clear
 php artisan lighthouse:clear-cache 2>/dev/null || true
 php artisan migrate --force
