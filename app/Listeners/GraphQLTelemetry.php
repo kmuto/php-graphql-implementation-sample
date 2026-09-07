@@ -30,7 +30,7 @@ class GraphQLTelemetry
         }
 
         $spanName = rtrim("graphql " . ($operationType ?? '') . " " . ($operationName ?? ''));
-        $tracer = \OpenTelemetry\API\Globals::tracerProvider()->getTracer('sg.graphql');
+        $tracer = \OpenTelemetry\API\Globals::tracerProvider()->getTracer('com.example.graphql');
         self::$span = $tracer->spanBuilder($spanName)
             ->setSpanKind(SpanKind::KIND_INTERNAL)
             ->startSpan();
